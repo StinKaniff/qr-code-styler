@@ -1,0 +1,17 @@
+{
+  "name": "QR Generator",
+  "id": "1234567890",
+  "api": "1.0.0",
+  "editorType": ["figma"],
+  "main": "code.js",
+  "ui": "ui.html",
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "https://magictext.featurebase.app/en",
+      "https://cdn.jsdelivr.net",
+      "https://unpkg.com",
+      "https://cdnjs.cloudflare.com"
+    ]
+  }
+}
