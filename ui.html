@@ -67,7 +67,7 @@
                 qr.make();
                 
                 // Get the QR code data URL
-                const qrDataUrl = qr.createDataURL(4, 0);
+                const qrDataUrl = qr.createDataURL(1, 0); // Changed from 2 to 1 to reduce matrix size
                 console.log('QR code data URL generated');
 
                 // Create an image element to get the matrix
@@ -98,15 +98,17 @@
                     console.log('Matrix created, size:', matrix.length);
 
                     // Calculate dimensions
-                    const size = isPreview ? 260 : 1000;
+                    const size = 260;
                     const moduleSize = size / matrix.length;
                     console.log('Calculated dimensions:', { size, moduleSize });
 
                     // Generate SVG string
-                    let svgString = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+                    let svgString = `<svg width="260" height="260" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">`;
                     
-                    // Add background with surface color
-                    svgString += `<rect width="${size}" height="${size}" fill="var(--surface)"/>`;
+                    // Remove background rect completely - don't add it even for non-preview
+                    // if (!isPreview) {
+                    //     svgString += `<rect width="${size}" height="${size}" fill="var(--surface)"/>`;
+                    // }
 
                     // Draw QR code modules
                     for (let y = 0; y < matrix.length; y++) {
@@ -117,9 +119,9 @@
 
                                 // Skip drawing if in logo cut area
                                 if (currentLogoCut) {
-                                    const centerX = size / 2;
-                                    const centerY = size / 2;
-                                    const logoSize = size * 0.25; // 25% of QR code size
+                                    const centerX = 260 / 2;
+                                    const centerY = 260 / 2;
+                                    const logoSize = 260 * 0.35; // 35% of QR code size
                                     const logoX = centerX - logoSize / 2;
                                     const logoY = centerY - logoSize / 2;
                                     
@@ -298,16 +300,6 @@
                     }
                 });
 
-                // Handle Enter key
-                input.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        const text = input.value.trim();
-                        if (text) {
-                            generateQRCode(text, false);
-                        }
-                    }
-                });
-
                 // Initial state
                 togglePlaceholder(true);
                 if (input.value.trim()) {
@@ -334,6 +326,14 @@
                 // Set initial value
                 logoCutSelect.value = currentLogoCut ? 'true' : 'false';
 
+                // Add clear button functionality
+                const clearBtn = document.getElementById('clearBtn');
+                clearBtn.addEventListener('click', () => {
+                    const input = document.getElementById('qr-input');
+                    input.value = '';
+                    togglePlaceholder(true);
+                });
+
             } catch (error) {
                 console.error('Failed to initialize:', error);
             }
@@ -344,6 +344,7 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      user-select: none;
     }
 
     :root {
@@ -361,8 +362,10 @@
       --stroke: var(--figma-color-border);
       --text-primary: var(--figma-color-text);
       --text-secondary: var(--figma-color-text-secondary);
-        --text-tertiary: var(--figma-color-text-tertiary);
-        --hover: var(--figma-color-bg-hover);
+      --text-tertiary: var(--figma-color-text-tertiary);
+      --hover: var(--figma-color-bg-hover);
+      --hover-dark: var(--figma-color-bg-disabled);
+      --hover-light: var(--figma-color-bg-disabled-secondary);
 
       /* Icons */
       --ison-size: 20px;
@@ -484,6 +487,7 @@
         font-weight: var(--body-medium-font-weight);
         width: 100%;
         outline: none;
+        user-select: text;
     }
 
     .input input::placeholder {
@@ -495,11 +499,10 @@
     }
 
 
-    .input input:hover {
-        border-color: var(--primary);
+    .input:hover {
+        border-color: var(--hover-dark);
     }
-
-
+    
 
     .row-fill {
         display: flex;
@@ -571,16 +574,6 @@
         justify-content: flex-start;
         align-self: stretch;
         flex-shrink: 0;
-        position: relative;
-    }
-
-    .row-fill2 {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-        align-items: flex-start;
-        justify-content: center;
-        flex: 1;
         position: relative;
     }
 
@@ -685,6 +678,7 @@
 
     .button4 {
         background: var(--surface);
+        border: none;
         border-radius: 8px;
         padding: 8px 16px;
         display: flex;
@@ -694,9 +688,12 @@
         justify-content: center;
         align-self: stretch;
         flex: 1;
-        position: relative;
         cursor: pointer;
-        border: none;
+        transition: all 0.2s ease;
+    }
+
+    .button4:hover {
+        background: var(--stroke);
     }
 
     .button5 {
@@ -713,6 +710,11 @@
         cursor: pointer;
         border: none;
     }
+
+    .button5:hover {
+        background: var(--primary-dark);
+    }
+
 
     .body-medium {
         color: var(--text-primary);
@@ -790,6 +792,19 @@
         flex-direction: row;
         gap: 4px;
         align-items: center;
+        justify-content: flex-start;
+        flex-shrink: 0;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .like-the-plugin:hover .caption3 {
+        color: var(--figma-color-text-tertiary);
+    }
+
+    .like-the-plugin:hover svg path {
+        fill: var(--figma-color-text-danger);
     }
 
     .caption3 {
@@ -807,19 +822,23 @@
 
     .select-native {
         appearance: none;
+        background-repeat: no-repeat;
+        background: var(--bg,);
+        border-radius: var(--8px, 8px);
+        border-style: solid;
+        border-color: var(--stroke,);
+        border-width: 1px;
         display: flex;
+        flex-direction: row;
+        gap: 4px;
         align-items: center;
         justify-content: center;
-        background-color: var(--bg);
-        color: var(--text-primary);
-        padding: 8px 32px 8px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--stroke);
         outline: none;
         cursor: pointer;
         width: 100%;
         height: 40px;
         text-align: center;
+        color: var(--figma-color-text);
     }
 
     .select-native:hover {
@@ -834,17 +853,6 @@
         align-items: flex-start;
         justify-content: center;
         flex: 1;
-    }
-
-    .row-fill2 svg {
-        position: absolute;
-        right: 16px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 16px;
-        height: 16px;
-        stroke: var(--text-secondary);
-        pointer-events: none;
     }
     </style>
 </head>
@@ -887,9 +895,6 @@
                                 <option value="Q">Quartile</option>
                                 <option value="H">High</option>
                             </select>
-                            <svg width="16" height="16">
-                                <use xlink:href="#icon-chevron-down"></use>
-                            </svg>
                     </div>
                     <div class="row-fill2">
                         <div class="caption">Cut for the logo</div>
@@ -897,9 +902,6 @@
                             <option value="false">No</option>
                             <option value="true">Yes</option>
                         </select>
-                        <svg width="16" height="16">
-                            <use xlink:href="#icon-chevron-down"></use>
-                        </svg>
                     </div>
                 </div>
                 <div class="row-fill3">
@@ -920,20 +922,19 @@
                 </div>
             </div>
         </div>
+
+        <!-- Footer -->
+
         <div class="footer">
             <div class="footer-left">
-                <svg width="16" height="16">
-                    <use xlink:href="#icon-info"></use>
-                </svg>
-                <div class="frame-30"></div>
                 <div class="like-the-plugin">
                     <svg width="17" height="16">
                         <use xlink:href="#icon-heart"></use>
                     </svg>
-                    <div class="caption3">Like the plugin!</div>
+                    <div class="caption3">Like it?</div>
                 </div>
             </div>
-            <div class="caption3">Support the plugin</div>
+            <div class="caption3">Enjoy using it!</div>
   	</div>
     </div>
 
@@ -979,6 +980,19 @@
             <path d="M60.6667 36C60.6667 35.4696 60.456 34.9609 60.0809 34.5858C59.7058 34.2108 59.1971 34 58.6667 34C58.1362 34 57.6275 34.2108 57.2525 34.5858C56.8774 34.9609 56.6667 35.4696 56.6667 36H60.6667ZM60.6667 45.3334V36H56.6667V45.3334H60.6667Z" fill="#7133F5"/>
             <path d="M13.3333 16.6667C13.3333 15.2934 13.3333 14.6054 13.68 14.12C13.8008 13.9488 13.9495 13.7992 14.12 13.6774C14.6053 13.3334 15.2933 13.3334 16.6667 13.3334C18.04 13.3334 18.728 13.3334 19.2133 13.68C19.3845 13.8008 19.5342 13.9496 19.656 14.12C20 14.6054 20 15.2934 20 16.6667C20 18.04 20 18.728 19.6533 19.2134C19.5326 19.3846 19.3838 19.5342 19.2133 19.656C18.728 20 18.04 20 16.6667 20C15.2933 20 14.6053 20 14.12 19.6534C13.9488 19.5326 13.7992 19.3838 13.6773 19.2134C13.3333 18.728 13.3333 18.04 13.3333 16.6667ZM13.3333 47.3334C13.3333 45.96 13.3333 45.272 13.68 44.7867C13.8008 44.6155 13.9495 44.4659 14.12 44.344C14.6053 44 15.2933 44 16.6667 44C18.04 44 18.728 44 19.2133 44.3467C19.3845 44.4675 19.5342 44.6162 19.656 44.7867C20 45.272 20 45.96 20 47.3334C20 48.7067 20 49.3947 19.6533 49.88C19.5326 50.0512 19.3838 50.2009 19.2133 50.3227C18.728 50.6667 18.04 50.6667 16.6667 50.6667C15.2933 50.6667 14.6053 50.6667 14.12 50.32C13.9488 50.1993 13.7992 50.0505 13.6773 49.88C13.3333 49.3947 13.3333 48.7067 13.3333 47.3334ZM42.6667 47.3334C42.6667 45.4614 42.6667 44.5254 43.1173 43.8507C43.3114 43.5606 43.5606 43.3115 43.8507 43.1174C44.5253 42.6667 45.4613 42.6667 47.3333 42.6667C49.2053 42.6667 50.1413 42.6667 50.816 43.1174C51.1061 43.3115 51.3552 43.5606 51.5493 43.8507C52 44.5254 52 45.4614 52 47.3334C52 49.2054 52 50.1414 51.5493 50.816C51.3552 51.1061 51.1061 51.3553 50.816 51.5494C50.1413 52 49.2053 52 47.3333 52C45.4613 52 44.5253 52 43.8507 51.5494C43.5606 51.3553 43.3114 51.1061 43.1173 50.816C42.6667 50.1414 42.6667 49.2054 42.6667 47.3334Z" fill="#7133F5"/>            
         </symbol>
+
+        <!-- Shield Icon Cross-->
+        <symbol id="icon-shild-cross" viewBox="0 0 16 16">
+            <path d="M10.03 8.96991C9.96134 8.89622 9.87854 8.83712 9.78654 8.79613C9.69454 8.75514 9.59523 8.73309 9.49452 8.73132C9.39382 8.72954 9.29379 8.74807 9.2004 8.78579C9.10702 8.82351 9.02218 8.87965 8.95096 8.95087C8.87974 9.02209 8.8236 9.10692 8.78588 9.20031C8.74816 9.2937 8.72963 9.39373 8.73141 9.49443C8.73319 9.59513 8.75523 9.69445 8.79622 9.78645C8.83721 9.87845 8.89631 9.96125 8.97 10.0299L10.94 11.9999L8.97 13.9699C8.89631 14.0386 8.83721 14.1214 8.79622 14.2134C8.75523 14.3054 8.73319 14.4047 8.73141 14.5054C8.72963 14.6061 8.74816 14.7061 8.78588 14.7995C8.8236 14.8929 8.87974 14.9777 8.95096 15.0489C9.02218 15.1202 9.10702 15.1763 9.2004 15.214C9.29379 15.2518 9.39382 15.2703 9.49452 15.2685C9.59523 15.2667 9.69454 15.2447 9.78654 15.2037C9.87854 15.1627 9.96134 15.1036 10.03 15.0299L12 13.0599L13.97 15.0299C14.1122 15.1624 14.3002 15.2345 14.4945 15.2311C14.6888 15.2277 14.8742 15.1489 15.0116 15.0115C15.149 14.8741 15.2277 14.6887 15.2312 14.4944C15.2346 14.3001 15.1625 14.1121 15.03 13.9699L13.06 11.9999L15.03 10.0299C15.1037 9.96125 15.1628 9.87845 15.2038 9.78645C15.2448 9.69445 15.2668 9.59513 15.2686 9.49443C15.2704 9.39373 15.2518 9.2937 15.2141 9.20031C15.1764 9.10692 15.1203 9.02209 15.049 8.95087C14.9778 8.87965 14.893 8.82351 14.7996 8.78579C14.7062 8.74807 14.6062 8.72954 14.5055 8.73132C14.4048 8.73309 14.3055 8.75514 14.2135 8.79613C14.1215 8.83712 14.0387 8.89622 13.97 8.96991L12 10.9399L10.03 8.96991Z" fill="#ABABAB"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.25C11.063 1.25 10.167 1.557 8.723 2.051L7.996 2.301C6.515 2.807 5.371 3.199 4.553 3.531C4.141 3.698 3.786 3.861 3.501 4.026C3.226 4.186 2.951 4.385 2.764 4.652C2.579 4.915 2.483 5.239 2.423 5.552C2.36 5.876 2.323 6.265 2.298 6.712C2.25 7.598 2.25 8.814 2.25 10.39V11.991C2.25 18.092 6.858 21.017 9.598 22.215L9.625 22.226C9.965 22.375 10.285 22.514 10.652 22.608C11.039 22.708 11.451 22.75 12 22.75C12.55 22.75 12.96 22.708 13.348 22.608C13.715 22.514 14.035 22.375 14.374 22.226L14.402 22.215C17.142 21.017 21.75 18.092 21.75 11.991V10.39C21.75 8.814 21.75 7.598 21.702 6.711C21.6855 6.32204 21.6437 5.93456 21.577 5.551C21.517 5.239 21.421 4.915 21.237 4.651C21.049 4.385 20.774 4.186 20.499 4.026C20.1594 3.8385 19.808 3.67315 19.447 3.531C18.629 3.199 17.485 2.807 16.004 2.301L15.277 2.051C13.833 1.557 12.937 1.25 12 1.25ZM9.08 3.514C10.695 2.962 11.342 2.75 12 2.75C12.658 2.75 13.305 2.962 14.92 3.514L15.492 3.71C17.005 4.228 18.108 4.606 18.882 4.92C19.269 5.078 19.549 5.21 19.746 5.324C19.842 5.38 19.9113 5.42633 19.954 5.463C19.992 5.493 20.007 5.511 20.009 5.513C20.0221 5.53653 20.0329 5.56132 20.041 5.587C20.061 5.64167 20.082 5.72433 20.104 5.835C20.1593 6.15166 20.1927 6.47175 20.204 6.793C20.25 7.634 20.25 8.808 20.25 10.417V11.991C20.25 17.167 16.38 19.714 13.801 20.84C13.43 21.002 13.215 21.094 12.976 21.155C12.748 21.214 12.47 21.25 12 21.25C11.53 21.25 11.252 21.214 11.024 21.155C10.784 21.095 10.57 21.002 10.199 20.84C7.619 19.714 3.75 17.166 3.75 11.991V10.417C3.75 8.808 3.75 7.634 3.796 6.793C3.8073 6.47175 3.84071 6.15166 3.896 5.835C3.91733 5.72433 3.93833 5.64167 3.959 5.587C3.977 5.537 3.989 5.517 3.991 5.513C4.00774 5.49466 4.02615 5.47792 4.046 5.463C4.08867 5.42633 4.158 5.37967 4.254 5.323C4.451 5.209 4.731 5.078 5.118 4.921C5.892 4.606 6.995 4.228 8.508 3.711L9.08 3.514Z" fill="#ABABAB"/>
+        </symbol>
+            
+        <!-- Shield Icon Check-->
+        <symbol id="icon-shild-check" viewBox="0 0 16 16">
+            <path d="M15.06 10.5C15.1926 10.3515 15.2608 10.1564 15.2495 9.95758C15.2383 9.75879 15.1485 9.57261 15 9.44C14.8515 9.30739 14.6564 9.23922 14.4576 9.25047C14.2588 9.26172 14.0726 9.35148 13.94 9.5L10.929 12.874L10.059 11.9C9.92603 11.7531 9.74033 11.6647 9.54244 11.6543C9.34456 11.6438 9.15059 11.7121 9.00289 11.8442C8.8552 11.9763 8.76578 12.1615 8.75419 12.3594C8.74259 12.5572 8.80975 12.7515 8.94099 12.9L10.369 14.5C10.4393 14.5788 10.5256 14.6419 10.622 14.685C10.7184 14.7282 10.8228 14.7505 10.9285 14.7505C11.0341 14.7505 11.1386 14.7282 11.235 14.685C11.3314 14.6419 11.4176 14.5788 11.488 14.5L15.06 10.5Z" fill="#ABABAB"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.25C11.063 1.25 10.167 1.557 8.723 2.051L7.996 2.301C6.515 2.807 5.371 3.199 4.553 3.531C4.141 3.698 3.786 3.861 3.501 4.026C3.226 4.186 2.951 4.385 2.764 4.652C2.579 4.915 2.483 5.239 2.423 5.552C2.36 5.876 2.323 6.265 2.298 6.712C2.25 7.598 2.25 8.814 2.25 10.39V11.991C2.25 18.092 6.858 21.017 9.598 22.215L9.625 22.226C9.965 22.375 10.285 22.514 10.652 22.608C11.039 22.708 11.451 22.75 12 22.75C12.55 22.75 12.96 22.708 13.348 22.608C13.715 22.514 14.035 22.375 14.374 22.226L14.402 22.215C17.142 21.017 21.75 18.092 21.75 11.991V10.39C21.75 8.814 21.75 7.598 21.702 6.711C21.6855 6.32204 21.6437 5.93456 21.577 5.551C21.517 5.239 21.421 4.915 21.237 4.651C21.049 4.385 20.774 4.186 20.499 4.026C20.1594 3.8385 19.808 3.67315 19.447 3.531C18.629 3.199 17.485 2.807 16.004 2.301L15.277 2.051C13.833 1.557 12.937 1.25 12 1.25ZM9.08 3.514C10.695 2.962 11.342 2.75 12 2.75C12.658 2.75 13.305 2.962 14.92 3.514L15.492 3.71C17.005 4.228 18.108 4.606 18.882 4.92C19.269 5.078 19.549 5.21 19.746 5.324C19.842 5.38 19.9113 5.42633 19.954 5.463C19.992 5.493 20.007 5.511 20.009 5.513C20.0221 5.53653 20.0329 5.56132 20.041 5.587C20.061 5.64167 20.082 5.72433 20.104 5.835C20.1593 6.15166 20.1927 6.47175 20.204 6.793C20.25 7.634 20.25 8.808 20.25 10.417V11.991C20.25 17.167 16.38 19.714 13.801 20.84C13.43 21.002 13.215 21.094 12.976 21.155C12.748 21.214 12.47 21.25 12 21.25C11.53 21.25 11.252 21.214 11.024 21.155C10.784 21.095 10.57 21.002 10.199 20.84C7.619 19.714 3.75 17.166 3.75 11.991V10.417C3.75 8.808 3.75 7.634 3.796 6.793C3.8073 6.47175 3.84071 6.15166 3.896 5.835C3.91733 5.72433 3.93833 5.64167 3.959 5.587C3.977 5.537 3.989 5.517 3.991 5.513C4.00774 5.49466 4.02615 5.47792 4.046 5.463C4.08867 5.42633 4.158 5.37967 4.254 5.323C4.451 5.209 4.731 5.078 5.118 4.921C5.892 4.606 6.995 4.228 8.508 3.711L9.08 3.514Z" fill="#ABABAB"/>
+        </symbol>
+            
     </svg>
 
     <script>
@@ -1023,7 +1037,7 @@
             qr.make();
             
             // Get the QR code data URL
-            const qrDataUrl = qr.createDataURL(4, 0);
+            const qrDataUrl = qr.createDataURL(1, 0); // Changed from 2 to 1 to reduce matrix size
             console.log('QR code data URL generated');
 
             // Create an image element to get the matrix
@@ -1054,15 +1068,17 @@
                 console.log('Matrix created, size:', matrix.length);
 
                 // Calculate dimensions
-                const size = isPreview ? 260 : 1000;
+                const size = 260;
                 const moduleSize = size / matrix.length;
                 console.log('Calculated dimensions:', { size, moduleSize });
 
                 // Generate SVG string
-                let svgString = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+                let svgString = `<svg width="260" height="260" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">`;
                 
-                // Add background with surface color
-                svgString += `<rect width="${size}" height="${size}" fill="var(--surface)"/>`;
+                // Remove background rect completely - don't add it even for non-preview
+                // if (!isPreview) {
+                //     svgString += `<rect width="${size}" height="${size}" fill="var(--surface)"/>`;
+                // }
 
                 // Draw QR code modules
                 for (let y = 0; y < matrix.length; y++) {
@@ -1073,9 +1089,9 @@
 
                             // Skip drawing if in logo cut area
                             if (currentLogoCut) {
-                                const centerX = size / 2;
-                                const centerY = size / 2;
-                                const logoSize = size * 0.35; // 40% of QR code size
+                                const centerX = 260 / 2;
+                                const centerY = 260 / 2;
+                                const logoSize = 260 * 0.35; // 35% of QR code size
                                 const logoX = centerX - logoSize / 2;
                                 const logoY = centerY - logoSize / 2;
                                 
