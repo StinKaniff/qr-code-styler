@@ -131,37 +131,76 @@
                                     }
                                 }
 
-                                switch (currentShape) {
-                                    case 'dotted':
-                                        // Draw circle
-                                        const centerX = xPos + moduleSize / 2;
-                                        const centerY = yPos + moduleSize / 2;
-                                        const radius = moduleSize * 0.4;
-                                        svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="var(--text-primary)"/>`;
-                                        break;
+                                // Function to check if a module exists at given coordinates
+                                const hasModule = (x, y) => {
+                                    return y >= 0 && y < matrix.length && 
+                                           x >= 0 && x < matrix.length && 
+                                           matrix[y][x];
+                                };
 
-                                    case 'curved':
-                                        // Draw rounded rectangle
-                                        const cornerRadius = moduleSize * 0.2;
-                                        svgString += `<path d="M ${xPos + cornerRadius} ${yPos} 
-                                            h ${moduleSize - 2 * cornerRadius} 
-                                            q ${cornerRadius} 0 ${cornerRadius} ${cornerRadius} 
-                                            v ${moduleSize - 2 * cornerRadius} 
-                                            q 0 ${cornerRadius} -${cornerRadius} ${cornerRadius} 
-                                            h ${-moduleSize + 2 * cornerRadius} 
-                                            q ${-cornerRadius} 0 ${-cornerRadius} ${-cornerRadius} 
-                                            v ${-moduleSize + 2 * cornerRadius} 
-                                            q 0 ${-cornerRadius} ${cornerRadius} ${-cornerRadius}" 
-                                            fill="var(--text-primary)"/>`;
-                                        break;
+                                if (currentShape === 'curved') {
+                                    // Check neighboring modules
+                                    const hasTop = hasModule(x, y - 1);
+                                    const hasBottom = hasModule(x, y + 1);
+                                    const hasLeft = hasModule(x - 1, y);
+                                    const hasRight = hasModule(x + 1, y);
 
-                                    default: // classic
-                                        svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="var(--text-primary)"/>`;
+                                    // Determine which corners should be rounded
+                                    const roundTopLeft = !hasTop && !hasLeft;
+                                    const roundTopRight = !hasTop && !hasRight;
+                                    const roundBottomLeft = !hasBottom && !hasLeft;
+                                    const roundBottomRight = !hasBottom && !hasRight;
+
+                                    // Create path with conditional rounded corners
+                                    const radius = 10; // Corner radius
+                                    let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
+
+                                    // Top edge to top-right corner
+                                    path += ` H ${xPos + moduleSize - (roundTopRight ? radius : 0)}`;
+                                    
+                                    // Top-right corner
+                                    if (roundTopRight) {
+                                        path += ` Q ${xPos + moduleSize} ${yPos} ${xPos + moduleSize} ${yPos + radius}`;
+                                    }
+
+                                    // Right edge to bottom-right corner
+                                    path += ` V ${yPos + moduleSize - (roundBottomRight ? radius : 0)}`;
+                                    
+                                    // Bottom-right corner
+                                    if (roundBottomRight) {
+                                        path += ` Q ${xPos + moduleSize} ${yPos + moduleSize} ${xPos + moduleSize - radius} ${yPos + moduleSize}`;
+                                    }
+
+                                    // Bottom edge to bottom-left corner
+                                    path += ` H ${xPos + (roundBottomLeft ? radius : 0)}`;
+                                    
+                                    // Bottom-left corner
+                                    if (roundBottomLeft) {
+                                        path += ` Q ${xPos} ${yPos + moduleSize} ${xPos} ${yPos + moduleSize - radius}`;
+                                    }
+
+                                    // Left edge to top-left corner
+                                    path += ` V ${yPos + (roundTopLeft ? radius : 0)}`;
+                                    
+                                    // Top-left corner
+                                    if (roundTopLeft) {
+                                        path += ` Q ${xPos} ${yPos} ${xPos + radius} ${yPos}`;
+                                    }
+
+                                    path += ' Z'; // Close the path
+                                    svgString += `<path d="${path}" fill="black"/>`;
+                                } else if (currentShape === 'dotted') {
+                                    const centerX = xPos + moduleSize / 2;
+                                    const centerY = yPos + moduleSize / 2;
+                                    const radius = moduleSize / 2;
+                                    svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="black"/>`;
+                                } else {
+                                    // Classic square style
+                                    svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="black"/>`;
                                 }
                             }
                         }
                     }
-
                     svgString += '</svg>';
 
                     // Update preview or send to Figma
@@ -978,14 +1017,8 @@
             <path d="M44 16.6667C44 15.2934 44 14.6054 44.3467 14.12C44.4674 13.9488 44.6162 13.7992 44.7867 13.6774C45.272 13.3334 45.96 13.3334 47.3333 13.3334C48.7067 13.3334 49.3947 13.3334 49.88 13.68C50.0512 13.8008 50.2009 13.9496 50.3227 14.12C50.6667 14.6054 50.6667 15.2934 50.6667 16.6667C50.6667 18.04 50.6667 18.728 50.32 19.2134C50.1992 19.3846 50.0505 19.5342 49.88 19.656C49.3947 20 48.7067 20 47.3333 20C45.96 20 45.272 20 44.7867 19.6534C44.6155 19.5326 44.4658 19.3838 44.344 19.2134C44 18.728 44 18.04 44 16.6667Z" fill="#7133F5"/>
             <path d="M34 58.6667C34 59.1971 34.2107 59.7058 34.5858 60.0809C34.9609 60.456 35.4696 60.6667 36 60.6667C36.5304 60.6667 37.0391 60.456 37.4142 60.0809C37.7893 59.7058 38 59.1971 38 58.6667H34ZM34 50.6667V58.6667H38V50.6667H34Z" fill="#7133F5"/>
             <path d="M60.6667 36C60.6667 35.4696 60.456 34.9609 60.0809 34.5858C59.7058 34.2108 59.1971 34 58.6667 34C58.1362 34 57.6275 34.2108 57.2525 34.5858C56.8774 34.9609 56.6667 35.4696 56.6667 36H60.6667ZM60.6667 45.3334V36H56.6667V45.3334H60.6667Z" fill="#7133F5"/>
-            <path d="M13.3333 16.6667C13.3333 15.2934 13.3333 14.6054 13.68 14.12C13.8008 13.9488 13.9495 13.7992 14.12 13.6774C14.6053 13.3334 15.2933 13.3334 16.6667 13.3334C18.04 13.3334 18.728 13.3334 19.2133 13.68C19.3845 13.8008 19.5342 13.9496 19.656 14.12C20 14.6054 20 15.2934 20 16.6667C20 18.04 20 18.728 19.6533 19.2134C19.5326 19.3846 19.3838 19.5342 19.2133 19.656C18.728 20 18.04 20 16.6667 20C15.2933 20 14.6053 20 14.12 19.6534C13.9488 19.5326 13.7992 19.3838 13.6773 19.2134C13.3333 18.728 13.3333 18.04 13.3333 16.6667ZM13.3333 47.3334C13.3333 45.96 13.3333 45.272 13.68 44.7867C13.8008 44.6155 13.9495 44.4659 14.12 44.344C14.6053 44 15.2933 44 16.6667 44C18.04 44 18.728 44 19.2133 44.3467C19.3845 44.4675 19.5342 44.6162 19.656 44.7867C20 45.272 20 45.96 20 47.3334C20 48.7067 20 49.3947 19.6533 49.88C19.5326 50.0512 19.3838 50.2009 19.2133 50.3227C18.728 50.6667 18.04 50.6667 16.6667 50.6667C15.2933 50.6667 14.6053 50.6667 14.12 50.32C13.9488 50.1993 13.7992 50.0505 13.6773 49.88C13.3333 49.3947 13.3333 48.7067 13.3333 47.3334ZM42.6667 47.3334C42.6667 45.4614 42.6667 44.5254 43.1173 43.8507C43.3114 43.5606 43.5606 43.3115 43.8507 43.1174C44.5253 42.6667 45.4613 42.6667 47.3333 42.6667C49.2053 42.6667 50.1413 42.6667 50.816 43.1174C51.1061 43.3115 51.3552 43.5606 51.5493 43.8507C52 44.5254 52 45.4614 52 47.3334C52 49.2054 52 50.1414 51.5493 50.816C51.3552 51.1061 51.1061 51.3553 50.816 51.5494C50.1413 52 49.2053 52 47.3333 52C45.4613 52 44.5253 52 43.8507 51.5494C43.5606 51.3553 43.3114 51.1061 43.1173 50.816C42.6667 50.1414 42.6667 49.2054 42.6667 47.3334Z" fill="#7133F5"/>            
-        </symbol>
-
-        <!-- Shield Icon Cross-->
-        <symbol id="icon-shild-cross" viewBox="0 0 16 16">
-            <path d="M10.03 8.96991C9.96134 8.89622 9.87854 8.83712 9.78654 8.79613C9.69454 8.75514 9.59523 8.73309 9.49452 8.73132C9.39382 8.72954 9.29379 8.74807 9.2004 8.78579C9.10702 8.82351 9.02218 8.87965 8.95096 8.95087C8.87974 9.02209 8.8236 9.10692 8.78588 9.20031C8.74816 9.2937 8.72963 9.39373 8.73141 9.49443C8.73319 9.59513 8.75523 9.69445 8.79622 9.78645C8.83721 9.87845 8.89631 9.96125 8.97 10.0299L10.94 11.9999L8.97 13.9699C8.89631 14.0386 8.83721 14.1214 8.79622 14.2134C8.75523 14.3054 8.73319 14.4047 8.73141 14.5054C8.72963 14.6061 8.74816 14.7061 8.78588 14.7995C8.8236 14.8929 8.87974 14.9777 8.95096 15.0489C9.02218 15.1202 9.10702 15.1763 9.2004 15.214C9.29379 15.2518 9.39382 15.2703 9.49452 15.2685C9.59523 15.2667 9.69454 15.2447 9.78654 15.2037C9.87854 15.1627 9.96134 15.1036 10.03 15.0299L12 13.0599L13.97 15.0299C14.1122 15.1624 14.3002 15.2345 14.4945 15.2311C14.6888 15.2277 14.8742 15.1489 15.0116 15.0115C15.149 14.8741 15.2277 14.6887 15.2312 14.4944C15.2346 14.3001 15.1625 14.1121 15.03 13.9699L13.06 11.9999L15.03 10.0299C15.1037 9.96125 15.1628 9.87845 15.2038 9.78645C15.2448 9.69445 15.2668 9.59513 15.2686 9.49443C15.2704 9.39373 15.2518 9.2937 15.2141 9.20031C15.1764 9.10692 15.1203 9.02209 15.049 8.95087C14.9778 8.87965 14.893 8.82351 14.7996 8.78579C14.7062 8.74807 14.6062 8.72954 14.5055 8.73132C14.4048 8.73309 14.3055 8.75514 14.2135 8.79613C14.1215 8.83712 14.0387 8.89622 13.97 8.96991L12 10.9399L10.03 8.96991Z" fill="#ABABAB"/>
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.25C11.063 1.25 10.167 1.557 8.723 2.051L7.996 2.301C6.515 2.807 5.371 3.199 4.553 3.531C4.141 3.698 3.786 3.861 3.501 4.026C3.226 4.186 2.951 4.385 2.764 4.652C2.579 4.915 2.483 5.239 2.423 5.552C2.36 5.876 2.323 6.265 2.298 6.712C2.25 7.598 2.25 8.814 2.25 10.39V11.991C2.25 18.092 6.858 21.017 9.598 22.215L9.625 22.226C9.965 22.375 10.285 22.514 10.652 22.608C11.039 22.708 11.451 22.75 12 22.75C12.55 22.75 12.96 22.708 13.348 22.608C13.715 22.514 14.035 22.375 14.374 22.226L14.402 22.215C17.142 21.017 21.75 18.092 21.75 11.991V10.39C21.75 8.814 21.75 7.598 21.702 6.711C21.6855 6.32204 21.6437 5.93456 21.577 5.551C21.517 5.239 21.421 4.915 21.237 4.651C21.049 4.385 20.774 4.186 20.499 4.026C20.1594 3.8385 19.808 3.67315 19.447 3.531C18.629 3.199 17.485 2.807 16.004 2.301L15.277 2.051C13.833 1.557 12.937 1.25 12 1.25ZM9.08 3.514C10.695 2.962 11.342 2.75 12 2.75C12.658 2.75 13.305 2.962 14.92 3.514L15.492 3.71C17.005 4.228 18.108 4.606 18.882 4.92C19.269 5.078 19.549 5.21 19.746 5.324C19.842 5.38 19.9113 5.42633 19.954 5.463C19.992 5.493 20.007 5.511 20.009 5.513C20.0221 5.53653 20.0329 5.56132 20.041 5.587C20.061 5.64167 20.082 5.72433 20.104 5.835C20.1593 6.15166 20.1927 6.47175 20.204 6.793C20.25 7.634 20.25 8.808 20.25 10.417V11.991C20.25 17.167 16.38 19.714 13.801 20.84C13.43 21.002 13.215 21.094 12.976 21.155C12.748 21.214 12.47 21.25 12 21.25C11.53 21.25 11.252 21.214 11.024 21.155C10.784 21.095 10.57 21.002 10.199 20.84C7.619 19.714 3.75 17.166 3.75 11.991V10.417C3.75 8.808 3.75 7.634 3.796 6.793C3.8073 6.47175 3.84071 6.15166 3.896 5.835C3.91733 5.72433 3.93833 5.64167 3.959 5.587C3.977 5.537 3.989 5.517 3.991 5.513C4.00774 5.49466 4.02615 5.47792 4.046 5.463C4.08867 5.42633 4.158 5.37967 4.254 5.323C4.451 5.209 4.731 5.078 5.118 4.921C5.892 4.606 6.995 4.228 8.508 3.711L9.08 3.514Z" fill="#ABABAB"/>
-        </symbol>
+            <path d="M13.3333 16.6667C13.3333 15.2934 13.3333 14.6054 13.68 14.12C13.8008 13.9488 13.9495 13.7992 14.12 13.6774C14.6053 13.3334 15.2933 13.3334 16.6667 13.3334C18.04 13.3334 18.728 13.3334 19.2133 13.68C19.3845 13.8008 19.5342 13.9496 19.656 14.12C20 14.6054 20 15.2934 20 16.6667C20 18.04 20 18.728 19.6533 19.2134C19.5326 19.3846 19.3838 19.5342 19.2133 19.656C18.728 20 18.04 20 16.6667 20C15.2933 20 14.6053 20 14.12 19.6534C13.9488 19.5326 13.7992 19.3838 13.6773 19.2134C13.3333 18.728 13.3333 18.04 13.3333 16.6667ZM13.3333 47.3334C13.3333 45.96 13.3333 45.272 13.68 44.7867C13.8008 44.6155 13.9495 44.4659 14.12 44.344C14.6053 44 15.2933 44 16.6667 44C18.04 44 18.728 44 19.2133 44.3467C19.3845 44.4675 19.5342 44.6162 19.656 44.7867C20 45.272 20 45.96 20 47.3334C20 48.7067 20 49.3947 19.6533 49.88C19.5326 50.0512 19.3838 50.2009 19.2133 50.3227C18.728 50.6667 18.04 50.6667 16.6667 50.6667C15.2933 50.6667 14.6053 50.6667 14.12 50.32C13.9488 50.1993 13.7992 50.0505 13.6773 49.88C13.3333 49.3947 13.3333 48.7067 13.3333 47.3334ZM42.6667 47.3334C42.6667 45.4614 42.6667 44.5254 43.1173 43.8507C43.3114 43.5606 43.5606 43.3115 43.8507 43.1174C44.5253 42.6667 45.4613 42.6667 47.3333 42.6667C49.2053 42.6667 50.1413 42.6667 50.816 43.1174C51.1061 43.3115 51.3552 43.5606 51.5493 43.8507C52 44.5254 52 45.4614 52 47.3334C52 49.2054 52 50.1414 51.5493 50.816C51.3552 51.1061 51.1061 51.3553 50.816 51.5494C50.1413 52 49.2053 52 47.3333 52C45.4613 52 44.5253 52 43.8507 51.5494C43.5606 51.3553 43.3114 51.1061 43.1173 50.816C42.6667 50.1414 42.6667 49.2054 42.6667 47.3334Z" fill="#7133F5"/>
+            </symbol>
             
         <!-- Shield Icon Check-->
         <symbol id="icon-shild-check" viewBox="0 0 16 16">
@@ -1101,32 +1134,72 @@
                                 }
                             }
 
-                            switch (currentShape) {
-                                case 'dotted':
-                                    // Draw circle
-                                    const centerX = xPos + moduleSize / 2;
-                                    const centerY = yPos + moduleSize / 2;
-                                    const radius = moduleSize * 0.4;
-                                    svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="var(--text-primary)"/>`;
-                                    break;
+                            // Function to check if a module exists at given coordinates
+                            const hasModule = (x, y) => {
+                                return y >= 0 && y < matrix.length && 
+                                       x >= 0 && x < matrix.length && 
+                                       matrix[y][x];
+                            };
 
-                                case 'curved':
-                                    // Draw rounded rectangle
-                                    const cornerRadius = moduleSize * 0.2;
-                                    svgString += `<path d="M ${xPos + cornerRadius} ${yPos} 
-                                        h ${moduleSize - 2 * cornerRadius} 
-                                        q ${cornerRadius} 0 ${cornerRadius} ${cornerRadius} 
-                                        v ${moduleSize - 2 * cornerRadius} 
-                                        q 0 ${cornerRadius} -${cornerRadius} ${cornerRadius} 
-                                        h ${-moduleSize + 2 * cornerRadius} 
-                                        q ${-cornerRadius} 0 ${-cornerRadius} ${-cornerRadius} 
-                                        v ${-moduleSize + 2 * cornerRadius} 
-                                        q 0 ${-cornerRadius} ${cornerRadius} ${-cornerRadius}" 
-                                        fill="var(--text-primary)"/>`;
-                                    break;
+                            if (currentShape === 'curved') {
+                                // Check neighboring modules
+                                const hasTop = hasModule(x, y - 1);
+                                const hasBottom = hasModule(x, y + 1);
+                                const hasLeft = hasModule(x - 1, y);
+                                const hasRight = hasModule(x + 1, y);
 
-                                default: // classic
-                                    svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="var(--text-primary)"/>`;
+                                // Determine which corners should be rounded
+                                const roundTopLeft = !hasTop && !hasLeft;
+                                const roundTopRight = !hasTop && !hasRight;
+                                const roundBottomLeft = !hasBottom && !hasLeft;
+                                const roundBottomRight = !hasBottom && !hasRight;
+
+                                // Create path with conditional rounded corners
+                                const radius = 10; // Corner radius
+                                let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
+
+                                // Top edge to top-right corner
+                                path += ` H ${xPos + moduleSize - (roundTopRight ? radius : 0)}`;
+                                
+                                // Top-right corner
+                                if (roundTopRight) {
+                                    path += ` Q ${xPos + moduleSize} ${yPos} ${xPos + moduleSize} ${yPos + radius}`;
+                                }
+
+                                // Right edge to bottom-right corner
+                                path += ` V ${yPos + moduleSize - (roundBottomRight ? radius : 0)}`;
+                                
+                                // Bottom-right corner
+                                if (roundBottomRight) {
+                                    path += ` Q ${xPos + moduleSize} ${yPos + moduleSize} ${xPos + moduleSize - radius} ${yPos + moduleSize}`;
+                                }
+
+                                // Bottom edge to bottom-left corner
+                                path += ` H ${xPos + (roundBottomLeft ? radius : 0)}`;
+                                
+                                // Bottom-left corner
+                                if (roundBottomLeft) {
+                                    path += ` Q ${xPos} ${yPos + moduleSize} ${xPos} ${yPos + moduleSize - radius}`;
+                                }
+
+                                // Left edge to top-left corner
+                                path += ` V ${yPos + (roundTopLeft ? radius : 0)}`;
+                                
+                                // Top-left corner
+                                if (roundTopLeft) {
+                                    path += ` Q ${xPos} ${yPos} ${xPos + radius} ${yPos}`;
+                                }
+
+                                path += ' Z'; // Close the path
+                                svgString += `<path d="${path}" fill="black"/>`;
+                            } else if (currentShape === 'dotted') {
+                                const centerX = xPos + moduleSize / 2;
+                                const centerY = yPos + moduleSize / 2;
+                                const radius = moduleSize / 2;
+                                svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="black"/>`;
+                            } else {
+                                // Classic square style
+                                svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="black"/>`;
                             }
                         }
                     }
