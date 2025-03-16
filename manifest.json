@@ -1,6 +1,6 @@
 {
   "name": "QR Generator",
-  "id": "1234567890",
+  "id": "id",
   "api": "1.0.0",
   "editorType": ["figma"],
   "main": "code.js",
