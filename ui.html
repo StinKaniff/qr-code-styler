@@ -152,7 +152,7 @@
                                     const roundBottomRight = !hasBottom && !hasRight;
 
                                     // Create path with conditional rounded corners
-                                    const radius = 10; // Corner radius
+                                    const radius = moduleSize * 0.5; // 50% of module size
                                     let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
 
                                     // Top edge to top-right corner
@@ -1155,7 +1155,7 @@
                                 const roundBottomRight = !hasBottom && !hasRight;
 
                                 // Create path with conditional rounded corners
-                                const radius = 10; // Corner radius
+                                const radius = moduleSize * 0.5; // 50% of module size
                                 let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
 
                                 // Top edge to top-right corner
