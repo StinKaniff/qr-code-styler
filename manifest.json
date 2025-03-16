@@ -1,6 +1,6 @@
 {
-  "name": "QR Generator",
-  "id": "id",
+  "name": "QR Code Styler",
+  "id": "1483197863400441908",
   "api": "1.0.0",
   "editorType": ["figma"],
   "main": "code.js",
@@ -8,7 +8,6 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "https://magictext.featurebase.app/en",
       "https://cdn.jsdelivr.net",
       "https://unpkg.com",
       "https://cdnjs.cloudflare.com"
