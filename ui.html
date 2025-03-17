@@ -60,6 +60,18 @@
                     return;
                 }
 
+                // Check if QR code library is loaded
+                if (typeof qrcode === 'undefined') {
+                    console.error('QR code library not loaded');
+                    parent.postMessage({ 
+                        pluginMessage: { 
+                            type: 'error',
+                            message: 'QR code library not loaded'
+                        }
+                    }, '*');
+                    return;
+                }
+
                 // Create QR code matrix with current error correction level
                 console.log('Creating QR code matrix...');
                 const qr = qrcode(0, currentErrorLevel);
@@ -103,64 +115,106 @@
                     console.log('Calculated dimensions:', { size, moduleSize });
 
                     // Generate SVG string
-                    let svgString = '<svg width="260" height="260" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">';
+                    let svgString = '<svg width="260" height="260" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">';
+                    svgString += '<rect width="260" height="260" fill="white"/>';
 
-                    // Function to check if coordinates are in finder pattern area
-                    const isInFinderPattern = (x, y) => {
-                        const patternSize = 7;
-                        
-                        // Check if point is in any of the three finder pattern areas
-                        return (x < patternSize && y < patternSize) || // Top-left
-                               (x >= matrix.length - patternSize && y < patternSize) || // Top-right
-                               (x < patternSize && y >= matrix.length - patternSize); // Bottom-left
-                    };
-
-                    // Function to draw finder pattern with concentric circles
-                    const drawFinderPattern = (x, y) => {
-                        if (currentShape === 'dotted') {
-                            // Calculate the center of the finder pattern
-                            const centerX = x * moduleSize + (moduleSize * 7) / 2;
-                            const centerY = y * moduleSize + (moduleSize * 7) / 2;
-                            
-                            // Calculate radii for the outer ring and inner circle
-                            const outerRadius = moduleSize * 3.5;  // Outer circle
-                            const innerRadius = moduleSize * 1.5;  // Inner circle
-                            
-                            return `
-                                <g>
-                                <circle cx="${centerX}" cy="${centerY}" r="${outerRadius}" fill="black"/>
-                                    <circle cx="${centerX}" cy="${centerY}" r="${outerRadius - moduleSize}" fill="white"/>
-                                <circle cx="${centerX}" cy="${centerY}" r="${innerRadius}" fill="black"/>
-                                </g>
-                            `;
-                        } else {
-                            const xPos = x * moduleSize;
-                            const yPos = y * moduleSize;
-                            return `<g>
-                                <rect x="${xPos}" y="${yPos}" width="${moduleSize * 7}" height="${moduleSize * 7}" fill="black"/>
-                                <rect x="${xPos + moduleSize}" y="${yPos + moduleSize}" width="${moduleSize * 5}" height="${moduleSize * 5}" fill="white"/>
-                                <rect x="${xPos + moduleSize * 2}" y="${yPos + moduleSize * 2}" width="${moduleSize * 3}" height="${moduleSize * 3}" fill="black"/>
-                            </g>`;
-                        }
-                    };
-
-                    // Draw finder patterns first
-                    svgString += drawFinderPattern(0, 0); // Top-left
-                    svgString += drawFinderPattern(matrix.length - 7, 0); // Top-right
-                    svgString += drawFinderPattern(0, matrix.length - 7); // Bottom-left
-
-                    // Draw QR code modules (skipping finder pattern areas)
+                    // Draw QR code modules
                     for (let y = 0; y < matrix.length; y++) {
                         for (let x = 0; x < matrix.length; x++) {
-                            if (matrix[y][x] && !isInFinderPattern(x, y)) {
-                                if (currentShape === 'dotted') {
-                                    const centerX = x * moduleSize + moduleSize / 2;
-                                    const centerY = y * moduleSize + moduleSize / 2;
-                                    const radius = moduleSize / 2 * 0.9; // Slightly smaller for better spacing
+                            if (matrix[y][x]) {
+                                const xPos = x * moduleSize;
+                                const yPos = y * moduleSize;
+
+                                // Skip drawing if in logo cut area
+                                if (currentLogoCut) {
+                                    const centerX = 260 / 2;
+                                    const centerY = 260 / 2;
+                                    const logoSize = 260 * 0.35; // 35% of QR code size
+                                    const logoX = centerX - logoSize / 2;
+                                    const logoY = centerY - logoSize / 2;
+                                    
+                                    if (xPos >= logoX && xPos < logoX + logoSize &&
+                                        yPos >= logoY && yPos < logoY + logoSize) {
+                                        continue;
+                                    }
+                                }
+
+                                // Function to check if a module exists at given coordinates
+                                const hasModule = (x, y) => {
+                                    return y >= 0 && y < matrix.length && 
+                                           x >= 0 && x < matrix.length && 
+                                           matrix[y][x];
+                                };
+
+                                if (currentShape === 'curved') {
+                                    // Check neighboring modules
+                                    const hasTop = hasModule(x, y - 1);
+                                    const hasBottom = hasModule(x, y + 1);
+                                    const hasLeft = hasModule(x - 1, y);
+                                    const hasRight = hasModule(x + 1, y);
+
+                                    // Check if module has any neighbors
+                                    const hasAnyNeighbor = hasTop || hasBottom || hasLeft || hasRight;
+
+                                    if (!hasAnyNeighbor) {
+                                        // Draw circle if no neighbors
+                                        const centerX = xPos + moduleSize / 2;
+                                        const centerY = yPos + moduleSize / 2;
+                                        const radius = moduleSize / 2;
                                         svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="black"/>`;
                                     } else {
-                                    const xPos = x * moduleSize;
-                                    const yPos = y * moduleSize;
+                                        // Determine which corners should be rounded
+                                        const roundTopLeft = !hasTop && !hasLeft;
+                                        const roundTopRight = !hasTop && !hasRight;
+                                        const roundBottomLeft = !hasBottom && !hasLeft;
+                                        const roundBottomRight = !hasBottom && !hasRight;
+
+                                        // Create path with conditional rounded corners
+                                        const radius = moduleSize * 0.5; // 50% of module size
+                                        let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
+
+                                        // Top edge to top-right corner
+                                        path += ` H ${xPos + moduleSize - (roundTopRight ? radius : 0)}`;
+                                        
+                                        // Top-right corner
+                                        if (roundTopRight) {
+                                            path += ` Q ${xPos + moduleSize} ${yPos} ${xPos + moduleSize} ${yPos + radius}`;
+                                        }
+
+                                        // Right edge to bottom-right corner
+                                        path += ` V ${yPos + moduleSize - (roundBottomRight ? radius : 0)}`;
+                                        
+                                        // Bottom-right corner
+                                        if (roundBottomRight) {
+                                            path += ` Q ${xPos + moduleSize} ${yPos + moduleSize} ${xPos + moduleSize - radius} ${yPos + moduleSize}`;
+                                        }
+
+                                        // Bottom edge to bottom-left corner
+                                        path += ` H ${xPos + (roundBottomLeft ? radius : 0)}`;
+                                        
+                                        // Bottom-left corner
+                                        if (roundBottomLeft) {
+                                            path += ` Q ${xPos} ${yPos + moduleSize} ${xPos} ${yPos + moduleSize - radius}`;
+                                        }
+
+                                        // Left edge to top-left corner
+                                        path += ` V ${yPos + (roundTopLeft ? radius : 0)}`;
+                                        
+                                        // Top-left corner
+                                        if (roundTopLeft) {
+                                            path += ` Q ${xPos} ${yPos} ${xPos + radius} ${yPos}`;
+                                        }
+
+                                        path += ' Z'; // Close the path
+                                        svgString += `<path d="${path}" fill="black"/>`;
+                                    }
+                                } else if (currentShape === 'dotted') {
+                                    const centerX = xPos + moduleSize / 2;
+                                    const centerY = yPos + moduleSize / 2;
+                                    const radius = moduleSize / 2;
+                                    svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="black"/>`;
+                                } else {
+                                    // Classic square style
                                     svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="black"/>`;
                                 }
                             }
@@ -1069,258 +1123,4 @@
 
         <!-- QR Code Curved -->
         <symbol id="icon-qr-curved" viewBox="0 0 22 21">
-            <path d="M7.41668 11H2.50001C2.08334 11 1.66668 11.1667 1.33334 11.5C1.00001 11.8334 0.833344 12.25 0.833344 12.6667V17.5834C0.833344 18 1.00001 18.4167 1.33334 18.75C1.66668 19.0834 2.08334 19.25 2.50001 19.25H7.41668C7.83334 19.25 8.25001 19.0834 8.58334 18.75C8.91668 18.4167 9.08334 18 9.08334 17.5834V12.6667C9.08334 12.25 8.91668 11.8334 8.58334 11.5C8.25001 11.1667 7.83334 11 7.41668 11ZM7.41668 17.5H2.50001V12.5834H7.41668V17.5Z" fill="var(--text-primary)"/><path d="M7.41668 0.833374H2.50001C2.08334 0.833374 1.66668 1.00004 1.33334 1.33337C1.00001 1.66671 0.833344 2.08337 0.833344 2.50004V7.41671C0.833344 7.83337 1.00001 8.25004 1.33334 8.58337C1.66668 8.91671 2.08334 9.08337 2.50001 9.08337H7.41668C7.83334 9.08337 8.25001 8.91671 8.58334 8.58337C8.91668 8.25004 9.08334 7.83337 9.08334 7.41671V2.50004C9.08334 2.08337 8.91668 1.66671 8.58334 1.33337C8.25001 1.00004 7.83334 0.833374 7.41668 0.833374ZM7.41668 7.33337H2.50001V2.50004H7.41668V7.33337Z" fill="var(--text-primary)"/><path d="M18.6667 1.33337C18.3333 1.00004 17.9167 0.833374 17.5 0.833374H12.5833C12.1667 0.833374 11.75 1.00004 11.4167 1.33337C11.0833 1.66671 10.9167 2.08337 10.9167 2.50004V7.41671C10.9167 7.83337 11.0833 8.25004 11.4167 8.58337C11.75 8.91671 12.1667 9.08337 12.5833 9.08337H17.5C17.9167 9.08337 18.3333 8.91671 18.6667 8.58337C19 8.25004 19.1667 7.83337 19.1667 7.41671V2.50004C19.1667 2.08337 19 1.66671 18.6667 1.33337ZM17.5833 7.33337H12.6667V2.50004H17.5833V7.33337Z" fill="var(--text-primary)"/><path d="M15.0833 5.91671C15.6667 5.91671 16.0833 5.50004 16.0833 4.91671C16.0833 4.33337 15.6667 3.91671 15.0833 3.91671C14.5 3.91671 14.0833 4.33337 14.0833 4.91671C14.0833 5.50004 14.5 5.91671 15.0833 5.91671Z" fill="var(--text-primary)"/><path d="M4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671Z" fill="var(--text-primary)"/><path d="M4.91668 16.0834C5.50001 16.0834 5.91668 15.6667 5.91668 15.0834C5.91668 14.5 5.50001 14.0834 4.91668 14.0834C4.33334 14.0834 3.91668 14.5 3.91668 15.0834C3.91668 15.6667 4.33334 16.0834 4.91668 16.0834C5.50001 16.0834 5.91668 15.6667 5.91668 15.0834C5.91668 14.5 5.50001 14.0834 4.91668 14.0834Z" fill="var(--text-primary)"/><path d="M15 17.5H11.6667C11.4167 17.5 11.25 17.5 11.0833 17.75C10.9167 18 10.8333 18.0834 10.8333 18.3334C10.8333 18.5834 10.8333 18.75 11.0833 18.9167C11.3333 19.0834 11.4167 19.1667 11.6667 19.1667H15C15.25 19.1667 15.4167 19.1667 15.5833 18.9167C15.75 18.6667 15.8333 18.5834 15.8333 18.3334C15.8333 18.0834 15.8333 17.9167 15.5833 17.75C15.3333 17.5834 15.25 17.5 15 17.5Z" fill="var(--text-primary)"/><path d="M18.3333 10.8334H16.6667C16.4167 10.8334 16.25 10.8334 16.0833 11.0834C15.9167 11.3334 15.8333 11.4167 15.8333 11.6667C15.8333 11.9167 15.8333 12.0834 16.0833 12.25C16.3333 12.4167 16.4167 12.5 16.6667 12.5H18.3333C18.5833 12.5 18.75 12.5 18.9167 12.25C19.0833 12 19.1667 11.9167 19.1667 11.6667C19.1667 11.4167 19.1667 11.25 18.9167 11.0834C18.6667 10.9167 18.5833 10.8334 18.3333 10.8334Z" fill="var(--text-primary)"/><path d="M18.3333 14.1667H14.1667V11.6667C14.1667 11.4167 14.1667 11.25 13.9167 11.0834C13.6667 10.9167 13.5833 10.8334 13.3333 10.8334C13.0833 10.8334 12.9167 10.8334 12.75 11.0834C12.5833 11.3334 12.5 11.4167 12.5 11.6667V14.1667H11.6667C11.4167 14.1667 11.25 14.1667 11.0833 14.4167C10.9167 14.6667 10.8333 14.75 10.8333 15C10.8333 15.25 10.8333 15.4167 11.0833 15.5834C11.3333 15.75 11.4167 15.8334 11.6667 15.8334H17.5V18.3334C17.5 18.5834 17.5 18.75 17.75 18.9167C18 19.0834 18.0833 19.1667 18.3333 19.1667C18.5833 19.1667 18.75 19.1667 18.9167 18.9167C19.0833 18.6667 19.1667 18.5834 19.1667 18.3334V15C19.1667 14.75 19.1667 14.5834 18.9167 14.4167C18.6667 14.25 18.5833 14.1667 18.3333 14.1667Z" fill="var(--text-primary)"/>
-        </symbol>
-            
-
-        <!-- Chevron Down -->
-        <symbol id="icon-chevron-down" viewBox="0 0 20 20">
-            <path d="M5 7.5L10 12.5L15 7.5" stroke="white" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
-        </symbol>
-
-        <!-- Info Icon -->
-        <symbol id="icon-info" viewBox="0 0 16 16">
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M14.6666 8.00004C14.6666 11.682 11.682 14.6667 7.99998 14.6667C4.31798 14.6667 1.33331 11.682 1.33331 8.00004C1.33331 4.31804 4.31798 1.33337 7.99998 1.33337C11.682 1.33337 14.6666 4.31804 14.6666 8.00004ZM7.99998 5.16671C7.58598 5.16671 7.24998 5.50271 7.24998 5.91671C7.24998 6.04932 7.1973 6.17649 7.10353 6.27026C7.00976 6.36403 6.88259 6.41671 6.74998 6.41671C6.61737 6.41671 6.49019 6.36403 6.39643 6.27026C6.30266 6.17649 6.24998 6.04932 6.24998 5.91671C6.24999 5.63 6.32044 5.34768 6.45514 5.09459C6.58984 4.84149 6.78466 4.62537 7.02247 4.46522C7.26028 4.30507 7.5338 4.2058 7.81897 4.17615C8.10414 4.14649 8.39223 4.18736 8.65791 4.29515C8.92358 4.40294 9.1587 4.57435 9.3426 4.79432C9.52649 5.01428 9.65352 5.27606 9.71252 5.55663C9.77152 5.83721 9.76069 6.12798 9.68096 6.40338C9.60124 6.67878 9.45507 6.93038 9.25531 7.13604C9.19398 7.19915 9.13531 7.25848 9.07931 7.31404C8.9443 7.4434 8.81718 7.58076 8.69865 7.72537C8.55198 7.91337 8.49998 8.05137 8.49998 8.16671V8.66671C8.49998 8.79932 8.4473 8.92649 8.35353 9.02026C8.25976 9.11403 8.13259 9.16671 7.99998 9.16671C7.86737 9.16671 7.74019 9.11403 7.64643 9.02026C7.55266 8.92649 7.49998 8.79932 7.49998 8.66671V8.16671C7.49998 7.73004 7.70331 7.37604 7.90931 7.11137C8.06198 6.91537 8.25331 6.72471 8.40931 6.56871C8.45642 6.52204 8.49931 6.47893 8.53798 6.43937C8.64072 6.33364 8.71002 6.19997 8.73722 6.05507C8.76442 5.91017 8.74831 5.76047 8.69091 5.62468C8.6335 5.48888 8.53735 5.37302 8.41446 5.29157C8.29158 5.21011 8.14741 5.16668 7.99998 5.16671ZM7.99998 11.3334C8.17679 11.3334 8.34636 11.2631 8.47138 11.1381C8.59641 11.0131 8.66665 10.8435 8.66665 10.6667C8.66665 10.4899 8.59641 10.3203 8.47138 10.1953C8.34636 10.0703 8.17679 10 7.99998 10C7.82317 10 7.6536 10.0703 7.52857 10.1953C7.40355 10.3203 7.33331 10.4899 7.33331 10.6667C7.33331 10.8435 7.40355 11.0131 7.52857 11.1381C7.6536 11.2631 7.82317 11.3334 7.99998 11.3334Z" fill="#888888"/>            
-        </symbol>
-
-
-        <!-- QR Code Placeholder -->
-        <symbol id="icon-qr-placeholder" viewBox="0 0 64 64">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5.33334 45.0666C5.33334 41.5733 5.33334 39.8293 6.12 38.5466C6.55965 37.8294 7.16274 37.2263 7.88 36.7866C9.16 36 10.9093 36 14.4 36H17.3333C22.3627 36 24.8747 36 26.4373 37.5626C28 39.1253 28 41.6373 28 46.6666V49.6C28 53.0933 28 54.8373 27.2133 56.12C26.7737 56.8372 26.1706 57.4403 25.4533 57.88C24.1733 58.6667 22.424 58.6666 18.9333 58.6666C13.696 58.6666 11.0773 58.6667 9.15467 57.488C8.07877 56.8285 7.17413 55.9239 6.51467 54.848C5.33334 52.92 5.33334 50.304 5.33334 45.0666ZM36 14.4C36 10.9066 36 9.16265 36.7867 7.87998C37.2263 7.16271 37.8294 6.55962 38.5467 6.11998C39.8267 5.33331 41.576 5.33331 45.0667 5.33331C50.304 5.33331 52.9227 5.33331 54.848 6.51198C55.9239 7.17144 56.8285 8.07608 57.488 9.15198C58.6667 11.08 58.6667 13.6986 58.6667 18.9333C58.6667 22.4266 58.6667 24.1706 57.88 25.4533C57.4404 26.1706 56.8373 26.7737 56.12 27.2133C54.84 28 53.0907 28 49.6 28H46.6667C41.6373 28 39.1253 28 37.5627 26.4373C36 24.8746 36 22.3626 36 17.3333V14.4Z" stroke="#521ABD" stroke-width="4"/>
-            <path d="M5.33334 18.9333C5.33334 13.696 5.33334 11.0773 6.512 9.15465C7.17147 8.07875 8.0761 7.17411 9.152 6.51465C11.08 5.33331 13.6987 5.33331 18.9333 5.33331C22.4267 5.33331 24.1707 5.33331 25.4533 6.11998C26.1706 6.55962 26.7737 7.16271 27.2133 7.87998C28 9.15998 28 10.9093 28 14.4V17.3333C28 22.3626 28 24.8746 26.4373 26.4373C24.8747 28 22.3627 28 17.3333 28H14.4C10.9067 28 9.16267 28 7.88 27.2133C7.16274 26.7737 6.55965 26.1706 6.12 25.4533C5.33334 24.1733 5.33334 22.424 5.33334 18.9333Z" stroke="#521ABD" stroke-width="4"/>
-            <path d="M44 16.6666C44 15.2933 44 14.6053 44.3467 14.12C44.4674 13.9488 44.6162 13.7991 44.7867 13.6773C45.272 13.3333 45.96 13.3333 47.3333 13.3333C48.7067 13.3333 49.3947 13.3333 49.88 13.68C50.0512 13.8008 50.2008 13.9495 50.3227 14.12C50.6667 14.6053 50.6667 15.2933 50.6667 16.6666C50.6667 18.04 50.6667 18.728 50.32 19.2133C50.1992 19.3845 50.0505 19.5342 49.88 19.656C49.3947 20 48.7067 20 47.3333 20C45.96 20 45.272 20 44.7867 19.6533C44.6155 19.5325 44.4658 19.3838 44.344 19.2133C44 18.728 44 18.04 44 16.6666Z" fill="#7133F5"/>
-            <path d="M13.3333 16.6666C13.3333 15.2933 13.3333 14.6053 13.68 14.12C13.8008 13.9488 13.9495 13.7991 14.12 13.6773C14.6053 13.3333 15.2933 13.3333 16.6667 13.3333C18.04 13.3333 18.728 13.3333 19.2133 13.68C19.3845 13.8008 19.5342 13.9495 19.656 14.12C20 14.6053 20 15.2933 20 16.6666C20 18.04 20 18.728 19.6533 19.2133C19.5326 19.3845 19.3838 19.5342 19.2133 19.656C18.728 20 18.04 20 16.6667 20C15.2933 20 14.6053 20 14.12 19.6533C13.9488 19.5325 13.7992 19.3838 13.6773 19.2133C13.3333 18.728 13.3333 18.04 13.3333 16.6666ZM13.3333 47.3333C13.3333 45.96 13.3333 45.272 13.68 44.7866C13.8008 44.6154 13.9495 44.4658 14.12 44.344C14.6053 44 15.2933 44 16.6667 44C18.04 44 18.728 44 19.2133 44.3466C19.3845 44.4674 19.5342 44.6162 19.656 44.7866C20 45.272 20 45.96 20 47.3333C20 48.7066 20 49.3946 19.6533 49.88C19.5326 50.0512 19.3838 50.2008 19.2133 50.3226C18.728 50.6666 18.04 50.6666 16.6667 50.6666C15.2933 50.6666 14.6053 50.6666 14.12 50.32C13.9488 50.1992 13.7992 50.0504 13.6773 49.88C13.3333 49.3946 13.3333 48.7066 13.3333 47.3333Z" fill="#7133F5"/>
-            <path d="M42 36.5V47M42 47H37.5M42 47H56.5V57M50.5 36.5H58M48.5 57H38" stroke="#7133F5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            </symbol>
-            
-        <!-- Check Icon -->
-        <symbol id="icon-check" viewBox="0 0 12 12">
-        <path d="M9.76517 4.1534C9.92844 3.97055 10.0124 3.73032 9.99852 3.48558C9.98467 3.24084 9.87416 3.01162 9.6913 2.84835C9.50845 2.68509 9.26822 2.60115 9.02348 2.615C8.77873 2.62886 8.54951 2.73937 8.38625 2.92222L4.67917 7.07623L3.60804 5.87706C3.44434 5.69616 3.2157 5.58741 2.97207 5.57455C2.72844 5.56168 2.48963 5.64576 2.30779 5.80841C2.12595 5.97105 2.01586 6.19905 2.00158 6.4426C1.98731 6.68615 2.06999 6.92545 2.23158 7.10824L3.98971 9.07813C4.07632 9.17516 4.18246 9.25279 4.30117 9.30595C4.41988 9.35911 4.54848 9.38659 4.67855 9.38659C4.80862 9.38659 4.93722 9.35911 5.05593 9.30595C5.17464 9.25279 5.28078 9.17516 5.3674 9.07813L9.76517 4.1534Z" fill="var(--primary)"/>
-        </symbol>
-
-        <!-- Cross Icon -->
-        <symbol id="icon-cross" viewBox="0 0 12 12">
-        <path d="M3.58926 2.29211C3.50524 2.20194 3.40391 2.12962 3.29133 2.07945C3.17875 2.02929 3.05722 2.00232 2.93398 2.00014C2.81075 1.99797 2.68834 2.02064 2.57406 2.0668C2.45978 2.11296 2.35597 2.18166 2.26882 2.26882C2.18166 2.35597 2.11296 2.45978 2.0668 2.57406C2.02064 2.68834 1.99797 2.81075 2.00014 2.93398C2.00232 3.05722 2.02929 3.17875 2.07945 3.29133C2.12962 3.40391 2.20194 3.50524 2.29211 3.58926L4.70285 6L2.29211 8.41074C2.20194 8.49476 2.12962 8.59609 2.07945 8.70867C2.02929 8.82125 2.00232 8.94278 2.00014 9.06602C1.99797 9.18925 2.02064 9.31166 2.0668 9.42594C2.11296 9.54022 2.18166 9.64403 2.26882 9.73118C2.35597 9.81834 2.45978 9.88704 2.57406 9.9332C2.68834 9.97936 2.81075 10.002 2.93398 9.99986C3.05722 9.99768 3.17875 9.97071 3.29133 9.92055C3.40391 9.87038 3.50524 9.79806 3.58926 9.70789L6 7.29715L8.41074 9.70789C8.58472 9.87001 8.81484 9.95826 9.05261 9.95407C9.29038 9.94987 9.51724 9.85355 9.6854 9.6854C9.85355 9.51724 9.94987 9.29038 9.95407 9.05261C9.95826 8.81484 9.87001 8.58472 9.70789 8.41074L7.29715 6L9.70789 3.58926C9.79806 3.50524 9.87038 3.40391 9.92055 3.29133C9.97071 3.17875 9.99768 3.05722 9.99986 2.93398C10.002 2.81075 9.97936 2.68834 9.9332 2.57406C9.88704 2.45978 9.81834 2.35597 9.73118 2.26882C9.64403 2.18166 9.54022 2.11296 9.42594 2.0668C9.31166 2.02064 9.18925 1.99797 9.06602 2.00014C8.94278 2.00232 8.82125 2.02929 8.70867 2.07945C8.59609 2.12962 8.49476 2.20194 8.41074 2.29211L6 4.70285L3.58926 2.29211Z" fill="var(--figma-color-bg-danger)"/>
-        </symbol>
-            
-    </svg>
-
-    <script>
-    // Function to toggle placeholder visibility
-    function togglePlaceholder(show) {
-        console.log('Toggling placeholder:', show);
-        const placeholder = document.getElementById('qr-placeholder');
-        const previewContainer = document.getElementById('qr-preview');
-        
-        if (placeholder && previewContainer) {
-            if (show) {
-                console.log('Showing placeholder, hiding preview');
-                placeholder.style.display = 'flex';
-                previewContainer.style.display = 'none';
-            } else {
-                console.log('Showing preview, hiding placeholder');
-                placeholder.style.display = 'none';
-                previewContainer.style.display = 'flex';
-            }
-        } else {
-            console.error('Placeholder or preview container not found:', {
-                placeholder: !!placeholder,
-                previewContainer: !!previewContainer
-            });
-        }
-    }
-
-    // Function to generate QR code
-    function generateQRCode(text, isPreview = false) {
-        try {
-            console.log('Generating QR code:', { text, isPreview, currentShape, currentErrorLevel });
-            if (!text) {
-                console.log('No text provided, showing placeholder');
-                togglePlaceholder(true);
-                return;
-            }
-
-            // Create QR code matrix with current error correction level
-            console.log('Creating QR code matrix...');
-            const qr = qrcode(0, currentErrorLevel);
-            qr.addData(text);
-            qr.make();
-            
-            // Get the QR code data URL
-            const qrDataUrl = qr.createDataURL(1, 0); // Changed from 2 to 1 to reduce matrix size
-            console.log('QR code data URL generated');
-
-            // Create an image element to get the matrix
-            const img = new Image();
-            img.onload = function() {
-                // Create a canvas to get the pixel data
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                ctx.drawImage(img, 0, 0);
-                
-                // Get the pixel data
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const matrix = [];
-                
-                // Convert pixel data to matrix
-                for (let y = 0; y < canvas.height; y++) {
-                    const row = [];
-                    for (let x = 0; x < canvas.width; x++) {
-                        const idx = (y * canvas.width + x) * 4;
-                        // Check if pixel is black (R=0, G=0, B=0)
-                        row.push(imageData.data[idx] === 0);
-                    }
-                    matrix.push(row);
-                }
-                
-                console.log('Matrix created, size:', matrix.length);
-
-                // Calculate dimensions
-                const size = 260;
-                const moduleSize = size / matrix.length;
-                console.log('Calculated dimensions:', { size, moduleSize });
-
-                // Generate SVG string
-                let svgString = `<svg width="260" height="260" viewBox="0 0 260 260 fill="var(--text-primary)" xmlns="http://www.w3.org/2000/svg">`;
-                
-
-                // Draw QR code modules
-                for (let y = 0; y < matrix.length; y++) {
-                    for (let x = 0; x < matrix.length; x++) {
-                        if (matrix[y][x]) {
-                            const xPos = x * moduleSize;
-                            const yPos = y * moduleSize;
-
-                            // Skip drawing if in logo cut area
-                            if (currentLogoCut) {
-                                const centerX = 260 / 2;
-                                const centerY = 260 / 2;
-                                const logoSize = 260 * 0.35; // 35% of QR code size
-                                const logoX = centerX - logoSize / 2;
-                                const logoY = centerY - logoSize / 2;
-                                
-                                if (xPos >= logoX && xPos < logoX + logoSize &&
-                                    yPos >= logoY && yPos < logoY + logoSize) {
-                                    continue;
-                                }
-                            }
-
-                            // Function to check if a module exists at given coordinates
-                            const hasModule = (x, y) => {
-                                return y >= 0 && y < matrix.length && 
-                                       x >= 0 && x < matrix.length && 
-                                       matrix[y][x];
-                            };
-
-                            if (currentShape === 'curved') {
-                                // Check neighboring modules
-                                const hasTop = hasModule(x, y - 1);
-                                const hasBottom = hasModule(x, y + 1);
-                                const hasLeft = hasModule(x - 1, y);
-                                const hasRight = hasModule(x + 1, y);
-
-                                // Check if module has any neighbors
-                                const hasAnyNeighbor = hasTop || hasBottom || hasLeft || hasRight;
-
-                                if (!hasAnyNeighbor) {
-                                    // Draw circle if no neighbors
-                                    const centerX = xPos + moduleSize / 2;
-                                    const centerY = yPos + moduleSize / 2;
-                                    const radius = moduleSize / 2;
-                                    svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="var(--text-primary)"/>`;
-                                } else {
-                                    // Determine which corners should be rounded
-                                    const roundTopLeft = !hasTop && !hasLeft;
-                                    const roundTopRight = !hasTop && !hasRight;
-                                    const roundBottomLeft = !hasBottom && !hasLeft;
-                                    const roundBottomRight = !hasBottom && !hasRight;
-
-                                    // Create path with conditional rounded corners
-                                    const radius = moduleSize * 0.5; // 50% of module size
-                                    let path = `M ${xPos + (roundTopLeft ? radius : 0)} ${yPos}`; // Start at top edge
-
-                                    // Top edge to top-right corner
-                                    path += ` H ${xPos + moduleSize - (roundTopRight ? radius : 0)}`;
-                                    
-                                    // Top-right corner
-                                    if (roundTopRight) {
-                                        path += ` Q ${xPos + moduleSize} ${yPos} ${xPos + moduleSize} ${yPos + radius}`;
-                                    }
-
-                                    // Right edge to bottom-right corner
-                                    path += ` V ${yPos + moduleSize - (roundBottomRight ? radius : 0)}`;
-                                    
-                                    // Bottom-right corner
-                                    if (roundBottomRight) {
-                                        path += ` Q ${xPos + moduleSize} ${yPos + moduleSize} ${xPos + moduleSize - radius} ${yPos + moduleSize}`;
-                                    }
-
-                                    // Bottom edge to bottom-left corner
-                                    path += ` H ${xPos + (roundBottomLeft ? radius : 0)}`;
-                                    
-                                    // Bottom-left corner
-                                    if (roundBottomLeft) {
-                                        path += ` Q ${xPos} ${yPos + moduleSize} ${xPos} ${yPos + moduleSize - radius}`;
-                                    }
-
-                                    // Left edge to top-left corner
-                                    path += ` V ${yPos + (roundTopLeft ? radius : 0)}`;
-                                    
-                                    // Top-left corner
-                                    if (roundTopLeft) {
-                                        path += ` Q ${xPos} ${yPos} ${xPos + radius} ${yPos}`;
-                                    }
-
-                                    path += ' Z'; // Close the path
-                                    svgString += `<path d="${path}" fill="var(--text-primary)"/>`;
-                                }
-                            } else if (currentShape === 'dotted') {
-                                const centerX = xPos + moduleSize / 2;
-                                const centerY = yPos + moduleSize / 2;
-                                const radius = moduleSize / 2;
-                                svgString += `<circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="var(--text-primary)"/>`;
-                            } else {
-                                // Classic square style
-                                svgString += `<rect x="${xPos}" y="${yPos}" width="${moduleSize}" height="${moduleSize}" fill="var(--text-primary)"/>`;
-                            }
-                        }
-                    }
-                }
-
-                svgString += '</svg>';
-
-                // Update preview or send to Figma
-                if (isPreview) {
-                    const previewContainer = document.getElementById('qr-preview');
-                    if (previewContainer) {
-                        previewContainer.innerHTML = svgString;
-                        togglePlaceholder(false);
-                    }
-                } else {
-                    parent.postMessage({ 
-                        pluginMessage: { 
-                            type: 'generate-qr',
-                            svgString: svgString
-                        }
-                    }, '*');
-                }
-            };
-            img.src = qrDataUrl;
-        } catch (error) {
-            console.error('Error generating QR code:', error);
-            if (!isPreview) {
-                parent.postMessage({ 
-                    pluginMessage: { 
-                        type: 'error',
-                        message: 'Failed to generate QR code'
-                    }
-                }, '*');
-            }
-        }
-    }
-    </script>
-</body>
-</html>
+            <path d="M7.41668 11H2.50001C2.08334 11 1.66668 11.1667 1.33334 11.5C1.00001 11.8334 0.833344 12.25 0.833344 12.6667V17.5834C0.833344 18 1.00001 18.4167 1.33334 18.75C1.66668 19.0834 2.08334 19.25 2.50001 19.25H7.41668C7.83334 19.25 8.25001 19.0834 8.58334 18.75C8.91668 18.4167 9.08334 18 9.08334 17.5834V12.6667C9.08334 12.25 8.91668 11.8334 8.58334 11.5C8.25001 11.1667 7.83334 11 7.41668 11ZM7.41668 17.5H2.50001V12.5834H7.41668V17.5Z" fill="var(--text-primary)"/><path d="M7.41668 0.833374H2.50001C2.08334 0.833374 1.66668 1.00004 1.33334 1.33337C1.00001 1.66671 0.833344 2.08337 0.833344 2.50004V7.41671C0.833344 7.83337 1.00001 8.25004 1.33334 8.58337C1.66668 8.91671 2.08334 9.08337 2.50001 9.08337H7.41668C7.83334 9.08337 8.25001 8.91671 8.58334 8.58337C8.91668 8.25004 9.08334 7.83337 9.08334 7.41671V2.50004C9.08334 2.08337 8.91668 1.66671 8.58334 1.33337C8.25001 1.00004 7.83334 0.833374 7.41668 0.833374ZM7.41668 7.33337H2.50001V2.50004H7.41668V7.33337Z" fill="var(--text-primary)"/><path d="M18.6667 1.33337C18.3333 1.00004 17.9167 0.833374 17.5 0.833374H12.5833C12.1667 0.833374 11.75 1.00004 11.4167 1.33337C11.0833 1.66671 10.9167 2.08337 10.9167 2.50004V7.41671C10.9167 7.83337 11.0833 8.25004 11.4167 8.58337C11.75 8.91671 12.1667 9.08337 12.5833 9.08337H17.5C17.9167 9.08337 18.3333 8.91671 18.6667 8.58337C19 8.25004 19.1667 7.83337 19.1667 7.41671V2.50004C19.1667 2.08337 19 1.66671 18.6667 1.33337ZM17.5833 7.33337H12.6667V2.50004H17.5833V7.33337Z" fill="var(--text-primary)"/><path d="M15.0833 5.91671C15.6667 5.91671 16.0833 5.50004 16.0833 4.91671C16.0833 4.33337 15.6667 3.91671 15.0833 3.91671C14.5 3.91671 14.0833 4.33337 14.0833 4.91671C14.0833 5.50004 14.5 5.91671 15.0833 5.91671Z" fill="var(--text-primary)"/><path d="M4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671C4.33334 3.91671 3.91668 4.33337 3.91668 4.91671C3.91668 5.50004 4.33334 5.91671 4.91668 5.91671C5.50001 5.91671 5.91668 5.50004 5.91668 4.91671C5.91668 4.33337 5.50001 3.91671 4.91668 3.91671
