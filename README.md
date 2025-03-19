@@ -8,12 +8,12 @@ Create beautiful, customizable QR codes directly in Figma!
 
 ## Features
 
-- 🎨 Generate QR codes as vector SVG
-- 📐 Perfect 520x520px frame size
-- ⚡️ Instant generation and placement
-- 🎯 Auto-centering in viewport
-- 🖼 Clean white background
-- ✨ High-quality vector output
+- Generate QR codes as vector SVG
+- Create 520x520px frame size
+- Instant generation and placement
+- Auto-centering in viewport
+- Clean white background
+- High-quality vector output
 
 ## How to Use
 
@@ -41,7 +41,3 @@ If you encounter any issues or have suggestions, please feel free to:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-Made with ❤️ for the Figma Community 
